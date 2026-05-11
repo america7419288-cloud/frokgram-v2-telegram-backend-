@@ -4,6 +4,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { globalErrorHandler } from "./lib/errors";
 import premiumRoutes from "./routes/premium.routes";
+import starsRoutes from "./routes/stars.routes";
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.get("/health", (_req, res) => {
 const API_PREFIX = `/api/${process.env.API_VERSION || "v1"}`;
 
 app.use(`${API_PREFIX}/premium`, premiumRoutes);
+app.use(`${API_PREFIX}/stars`, starsRoutes);
 // More routes will be added each day
 
 // ─────────────────────────────────────────

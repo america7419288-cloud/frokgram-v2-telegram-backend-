@@ -4,7 +4,8 @@ export class AppError extends Error {
   constructor(
     public code: string,
     public message: string,
-    public statusCode: number = 500
+    public statusCode: number = 500,
+    public data?: any
   ) {
     super(message);
     this.name = "AppError";
@@ -25,6 +26,7 @@ export const globalErrorHandler = (
     error: {
       code: err.code || "INTERNAL_ERROR",
       message: err.message || "Something went wrong",
+      data: err.data,
       ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
     },
   });

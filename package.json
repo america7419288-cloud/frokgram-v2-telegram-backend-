@@ -36,7 +36,7 @@
     "moduleNameMapper": {
       "@/(.*)": "<rootDir>/src/$1"
     },
-    "setupFilesAfterFramework": [
+    "setupFilesAfterEnv": [
       "<rootDir>/src/tests/setup.ts"
     ]
   },
@@ -52,6 +52,7 @@
   },
   "type": "module",
   "devDependencies": {
+    "@jest/globals": "^30.4.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/ioredis": "^5.0.0",
