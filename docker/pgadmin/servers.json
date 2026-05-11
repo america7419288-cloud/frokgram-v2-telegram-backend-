@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Telegram Premium DB",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "telegram_premium",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

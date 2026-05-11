@@ -1,0 +1,164 @@
+
+
+# ─────────────────────────────────────────
+# NETWORKS
+# ─────────────────────────────────────────
+networks:
+  telegram_network:
+    driver: bridge
+
+# ─────────────────────────────────────────
+# VOLUMES (persistent data storage)
+# ─────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# ─────────────────────────────────────────
+# SERVICES
+# ─────────────────────────────────────────
+services:
+
+  # ─────────────────────────────────────
+  # PostgreSQL — Main Database
+  # ─────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: telegram_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-telegram_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telegram_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-telegram_premium}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - telegram_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-telegram_user} -d ${POSTGRES_DB:-telegram_premium}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ─────────────────────────────────────
+  # Redis — Cache & Message Queue
+  # ─────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: telegram_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redis_secret_password}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - telegram_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────
+  # MinIO — Object Storage (S3 compatible)
+  # For story media, NFT images, etc.
+  # ─────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: telegram_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-telegram_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_password}
+    ports:
+      - "9000:9000"   # API port
+      - "9001:9001"   # Web UI port
+    volumes:
+      - minio_data:/data
+    networks:
+      - telegram_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─────────────────────────────────────
+  # pgAdmin — PostgreSQL Web UI
+  # Access at http://localhost:5050
+  # ─────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: telegram_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@telegram.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin_password}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json
+    networks:
+      - telegram_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─────────────────────────────────────
+  # Redis Commander — Redis Web UI
+  # Access at http://localhost:8081
+  # ─────────────────────────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: telegram_redis_ui
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD:-redis_secret_password}
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin_password
+    ports:
+      - "8081:8081"
+    networks:
+      - telegram_network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ─────────────────────────────────────
+  # MailHog — Email Testing (catches all emails locally)
+  # Access at http://localhost:8025
+  # ─────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: telegram_mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP port
+      - "8025:8025"   # Web UI
+    networks:
+      - telegram_network

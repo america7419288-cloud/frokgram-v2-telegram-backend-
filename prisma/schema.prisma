@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  name             String?
+  isPremium        Boolean  @default(false)
+  premiumUntil     DateTime?
+  subscriptionPlan String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────
+// STARS WALLET
+// Every user gets one wallet
+// ─────────────────────────────────────────
+model StarsWallet {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  balance         BigInt   @default(0)      // current spendable balance
+  lockedBalance   BigInt   @default(0)      // locked in pending operations
+  lifetimeEarned  BigInt   @default(0)      // total ever earned/purchased
+  lifetimeSpent   BigInt   @default(0)      // total ever spent
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transactions    StarsTransaction[]
+  locks           StarsLock[]
+
+  @@index([userId])
+  @@map("stars_wallets")
+}
+
+// ─────────────────────────────────────────
+// STARS LEDGER (Double Entry)
+// Every movement of stars is recorded here
+// Immutable — never update, only insert
+// ─────────────────────────────────────────
+model StarsLedgerEntry {
+  id              String          @id @default(uuid())
+  transactionId   String
+  accountId       String          // userId or system account id
+  accountType     LedgerAccountType
+  entryType       LedgerEntryType // DEBIT or CREDIT
+  amount          BigInt
+  balanceAfter    BigInt          // snapshot of balance after this entry
+  createdAt       DateTime        @default(now())
+
+  transaction     StarsTransaction @relation("TransactionLedger", fields: [transactionId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@index([createdAt])
+  @@map("stars_ledger_entries")
+}
+
+enum LedgerAccountType {
+  USER
+  SYSTEM_PURCHASE_POOL    // stars bought with real money go here first
+  SYSTEM_FEE_POOL         // platform fees collected here
+  SYSTEM_CREATOR_EARNINGS // pending creator payouts
+  SYSTEM_GIFT_ESCROW      // gifts waiting to be claimed
+  SYSTEM_AUCTION_ESCROW   // bids locked during auctions
+}
+
+enum LedgerEntryType {
+  DEBIT   // money going OUT of account
+  CREDIT  // money coming IN to account
+}
+
+// ─────────────────────────────────────────
+// STARS TRANSACTIONS
+// High level record of what happened
+// ─────────────────────────────────────────
+model StarsTransaction {
+  id              String               @id @default(uuid())
+  walletId        String
+  fromUserId      String?              // null = system/purchase
+  toUserId        String?              // null = system/fee
+  amount          BigInt
+  type            StarsTransactionType
+  status          StarsTransactionStatus @default(PENDING)
+  referenceId     String?              // related entity id (giftId, reactionId etc)
+  referenceType   String?              // "gift", "reaction", "tip", "purchase"
+  description     String?
+  metadata        Json?
+  failureReason   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  completedAt     DateTime?
+
+  wallet          StarsWallet          @relation(fields: [walletId], references: [id])
+  ledgerEntries   StarsLedgerEntry[]   @relation("TransactionLedger")
+
+  @@index([walletId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("stars_transactions")
+}
+
+enum StarsTransactionType {
+  PURCHASE          // user bought stars with real money
+  TRANSFER          // user to user transfer
+  GIFT_SEND         // sending a gift
+  GIFT_CLAIM        // claiming a received gift
+  GIFT_REFUND       // gift rejected/refunded
+  REACTION          // paid reaction on message
+  TIP               // tip to creator/message
+  CHANNEL_SUB       // channel subscription payment
+  BOT_PAYMENT       // payment to a bot
+  NFT_PURCHASE      // buying an NFT
+  NFT_SALE          // receiving payment for NFT sale
+  WITHDRAWAL        // converting stars to fiat/TON
+  PLATFORM_FEE      // platform fee deduction
+  PROMO_CREDIT      // promotional stars added by admin
+  REFUND            // refund from platform
+  ADJUSTMENT        // manual admin adjustment
+}
+
+enum StarsTransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────
+// STARS LOCKS
+// Temporarily lock stars for pending ops
+// e.g., locked during auction bidding
+// ─────────────────────────────────────────
+model StarsLock {
+  id          String     @id @default(uuid())
+  walletId    String
+  userId      String
+  amount      BigInt
+  reason      String     // "auction_bid", "gift_pending", "withdrawal"
+  referenceId String?    // auctionId, giftId, etc.
+  expiresAt   DateTime   // auto-unlock after this
+  isReleased  Boolean    @default(false)
+  releasedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  wallet      StarsWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([isReleased])
+  @@map("stars_locks")
+}
+
+// ─────────────────────────────────────────
+// STARS PURCHASE ORDERS
+// Records of buying stars with real money
+// ─────────────────────────────────────────
+model StarsPurchaseOrder {
+  id               String              @id @default(uuid())
+  userId           String
+  starsAmount      BigInt              // how many stars
+  fiatAmount       Decimal             @db.Decimal(10, 2)
+  currency         String              @default("USD")
+  paymentProvider  String              // "apple_iap", "google_play", "ton", "stripe"
+  providerOrderId  String?             // provider's order/transaction id
+  receiptData      String?             @db.Text
+  status           PurchaseOrderStatus @default(PENDING)
+  tierId           String              // which price tier was selected
+  bonusStars       BigInt              @default(0) // bonus stars from promotion
+  failureReason    String?
+  metadata         Json?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  completedAt      DateTime?
+
+  @@index([userId])
+  @@index([providerOrderId])
+  @@index([status])
+  @@map("stars_purchase_orders")
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ─────────────────────────────────────────
+// STARS PRICE TIERS
+// Different packages users can buy
+// ─────────────────────────────────────────
+model StarsPriceTier {
+  id              String   @id @default(uuid())
+  starsCount      BigInt   // how many stars in this package
+  priceUsd        Decimal  @db.Decimal(10, 2)
+  discountPercent Int      @default(0)
+  bonusStars      BigInt   @default(0)   // extra stars on top
+  isPopular       Boolean  @default(false)
+  isBestValue     Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  appleProductId  String?  // App Store product ID
+  googleProductId String?  // Play Store product ID
+  createdAt       DateTime @default(now())
+
+  @@map("stars_price_tiers")
+}
+
+// ─────────────────────────────────────────
+// SYSTEM ACCOUNTS
+// Virtual accounts for platform operations
+// ─────────────────────────────────────────
+model SystemAccount {
+  id          String            @id @default(uuid())
+  accountKey  SystemAccountKey  @unique
+  balance     BigInt            @default(0)
+  description String
+  updatedAt   DateTime          @updatedAt
+
+  @@map("system_accounts")
+}
+
+enum SystemAccountKey {
+  PURCHASE_POOL
+  FEE_POOL
+  CREATOR_EARNINGS
+  GIFT_ESCROW
+  AUCTION_ESCROW
+  PROMO_POOL
+}
