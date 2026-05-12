@@ -241,3 +241,181 @@ enum SystemAccountKey {
   AUCTION_ESCROW
   PROMO_POOL
 }
+
+// ─────────────────────────────────────────
+// GIFT ANIMATIONS CATALOG
+// Different animation types for gifts
+// ─────────────────────────────────────────
+model GiftAnimation {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  displayName     String
+  lottieUrl       String   // animation file URL
+  thumbnailUrl    String
+  category        String   // "classic", "premium", "seasonal", "rare"
+  rarity          GiftRarity @default(COMMON)
+  priceStars      BigInt   // base price in stars
+  isAvailable     Boolean  @default(true)
+  isLimited       Boolean  @default(false)
+  availableUntil  DateTime?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  gifts           StarsGift[]
+
+  @@map("gift_animations")
+}
+
+enum GiftRarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+// ─────────────────────────────────────────
+// STARS GIFTS
+// Sending stars as a wrapped gift
+// ─────────────────────────────────────────
+model StarsGift {
+  id              String      @id @default(uuid())
+  fromUserId      String
+  toUserId        String
+  starsAmount     BigInt
+  animationId     String?
+  message         String?     @db.VarChar(255)
+  status          GiftStatus  @default(PENDING)
+
+  // NFT upgrade tracking
+  isUpgradedToNft Boolean     @default(false)
+  nftId           String?
+
+  // Timing
+  claimedAt       DateTime?
+  rejectedAt      DateTime?
+  expiresAt       DateTime    // unclaimed gifts expire after 30 days
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  animation       GiftAnimation? @relation(fields: [animationId], references: [id])
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("stars_gifts")
+}
+
+enum GiftStatus {
+  PENDING    // sent, not yet claimed
+  CLAIMED    // recipient claimed it
+  REJECTED   // recipient rejected it (stars returned)
+  EXPIRED    // never claimed within expiry window
+  REFUNDED   // sender got stars back
+}
+
+// ─────────────────────────────────────────
+// PAID REACTIONS (Star Reactions)
+// Sending stars WITH a reaction on a message
+// ─────────────────────────────────────────
+model PaidReaction {
+  id              String   @id @default(uuid())
+  messageId       String   // telegram message ID
+  chatId          String   // telegram chat/channel ID
+  userId          String   // who sent the reaction
+  starsAmount     BigInt
+  emoji           String   // reaction emoji
+  isAnonymous     Boolean  @default(false)
+
+  // Revenue tracking
+  ownerUserId     String   // who receives the revenue (channel owner)
+  platformFee     BigInt   // how much platform takes
+  ownerEarned     BigInt   // how much owner gets
+
+  createdAt       DateTime @default(now())
+
+  @@index([messageId, chatId])
+  @@index([userId])
+  @@index([ownerUserId])
+  @@index([chatId])
+  @@map("paid_reactions")
+}
+
+// ─────────────────────────────────────────
+// REACTION LEADERBOARD
+// Top reactors per message/chat
+// Updated asynchronously
+// ─────────────────────────────────────────
+model ReactionLeaderboard {
+  id          String   @id @default(uuid())
+  entityId    String   // messageId or chatId
+  entityType  String   // "message" or "chat"
+  userId      String
+  totalStars  BigInt
+  reactionCount Int    @default(1)
+  lastReactedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([entityId, entityType, userId])
+  @@index([entityId, entityType, totalStars])
+  @@map("reaction_leaderboards")
+}
+
+// ─────────────────────────────────────────
+// MESSAGE TIPS
+// Tipping a specific message or creator
+// ─────────────────────────────────────────
+model MessageTip {
+  id              String    @id @default(uuid())
+  fromUserId      String
+  toUserId        String    // message author / creator
+  messageId       String?   // null = direct creator tip
+  chatId          String?
+  starsAmount     BigInt
+  message         String?   @db.VarChar(200)
+  isAnonymous     Boolean   @default(false)
+
+  // Revenue split
+  platformFee     BigInt
+  creatorEarned   BigInt
+
+  createdAt       DateTime  @default(now())
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([messageId])
+  @@map("message_tips")
+}
+
+// ─────────────────────────────────────────
+// REVENUE SETTLEMENTS
+// Batch settlement of earned stars
+// Creator revenue accumulates here
+// before being moved to their wallet
+// ─────────────────────────────────────────
+model RevenueSettlement {
+  id              String            @id @default(uuid())
+  creatorId       String
+  sourceType      String            // "reaction", "tip", "channel_sub", "story"
+  sourceId        String            // referenceId of source
+  grossAmount     BigInt
+  platformFee     BigInt
+  netAmount       BigInt
+  status          SettlementStatus  @default(PENDING)
+  settledAt       DateTime?
+  createdAt       DateTime          @default(now())
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("revenue_settlements")
+}
+
+enum SettlementStatus {
+  PENDING     // waiting for batch settlement
+  PROCESSING  // currently being processed
+  SETTLED     // credited to creator wallet
+  FAILED      // settlement failed
+}

@@ -5,6 +5,7 @@ import { redis } from "./lib/redis";
 import { prisma } from "./lib/prisma";
 import "./jobs/premiumJobs";
 import "./jobs/starsJobs";
+import "./jobs/day3Jobs";
 import "./listeners/starsListeners";
 const PORT = parseInt(process.env.PORT || "3000");
 

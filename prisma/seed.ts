@@ -119,9 +119,123 @@ async function seedStarsPriceTiers() {
   console.log("✅ Stars price tiers and system accounts seeded");
 }
 
+async function seedGiftAnimations() {
+  console.log("🎁 Seeding gift animations...");
+
+  const animations = [
+    // Common gifts
+    {
+      name: "heart",
+      displayName: "Heart",
+      lottieUrl: "/animations/gifts/heart.json",
+      thumbnailUrl: "/thumbnails/gifts/heart.png",
+      category: "classic",
+      rarity: "COMMON" as const,
+      priceStars: BigInt(50),
+      sortOrder: 1,
+    },
+    {
+      name: "star",
+      displayName: "Shooting Star",
+      lottieUrl: "/animations/gifts/star.json",
+      thumbnailUrl: "/thumbnails/gifts/star.png",
+      category: "classic",
+      rarity: "COMMON" as const,
+      priceStars: BigInt(50),
+      sortOrder: 2,
+    },
+    {
+      name: "cake",
+      displayName: "Birthday Cake",
+      lottieUrl: "/animations/gifts/cake.json",
+      thumbnailUrl: "/thumbnails/gifts/cake.png",
+      category: "classic",
+      rarity: "COMMON" as const,
+      priceStars: BigInt(75),
+      sortOrder: 3,
+    },
+    // Uncommon gifts
+    {
+      name: "diamond",
+      displayName: "Diamond",
+      lottieUrl: "/animations/gifts/diamond.json",
+      thumbnailUrl: "/thumbnails/gifts/diamond.png",
+      category: "premium",
+      rarity: "UNCOMMON" as const,
+      priceStars: BigInt(150),
+      sortOrder: 4,
+    },
+    {
+      name: "trophy",
+      displayName: "Golden Trophy",
+      lottieUrl: "/animations/gifts/trophy.json",
+      thumbnailUrl: "/thumbnails/gifts/trophy.png",
+      category: "premium",
+      rarity: "UNCOMMON" as const,
+      priceStars: BigInt(200),
+      sortOrder: 5,
+    },
+    // Rare gifts
+    {
+      name: "rocket",
+      displayName: "Rocket",
+      lottieUrl: "/animations/gifts/rocket.json",
+      thumbnailUrl: "/thumbnails/gifts/rocket.png",
+      category: "rare",
+      rarity: "RARE" as const,
+      priceStars: BigInt(500),
+      sortOrder: 6,
+    },
+    {
+      name: "crown",
+      displayName: "Royal Crown",
+      lottieUrl: "/animations/gifts/crown.json",
+      thumbnailUrl: "/thumbnails/gifts/crown.png",
+      category: "rare",
+      rarity: "RARE" as const,
+      priceStars: BigInt(750),
+      sortOrder: 7,
+    },
+    // Epic gifts
+    {
+      name: "dragon",
+      displayName: "Dragon",
+      lottieUrl: "/animations/gifts/dragon.json",
+      thumbnailUrl: "/thumbnails/gifts/dragon.png",
+      category: "epic",
+      rarity: "EPIC" as const,
+      priceStars: BigInt(2000),
+      sortOrder: 8,
+    },
+    // Legendary gifts
+    {
+      name: "universe",
+      displayName: "Universe",
+      lottieUrl: "/animations/gifts/universe.json",
+      thumbnailUrl: "/thumbnails/gifts/universe.png",
+      category: "legendary",
+      rarity: "LEGENDARY" as const,
+      priceStars: BigInt(10000),
+      isLimited: true,
+      sortOrder: 9,
+    },
+  ];
+
+  for (const animation of animations) {
+    await prisma.giftAnimation.upsert({
+      where: { name: animation.name },
+      update: {},
+      create: { ...animation, isAvailable: true },
+    });
+  }
+
+  console.log("✅ Gift animations seeded");
+}
+
 async function main() {
   console.log("Seeding database...");
   await seedStarsPriceTiers();
+  await seedGiftAnimations();
 }
 
 main()

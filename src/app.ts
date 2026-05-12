@@ -5,6 +5,8 @@ import rateLimit from "express-rate-limit";
 import { globalErrorHandler } from "./lib/errors";
 import premiumRoutes from "./routes/premium.routes";
 import starsRoutes from "./routes/stars.routes";
+import giftsRoutes from "./routes/gifts.routes";
+import reactionsRoutes from "./routes/reactions.routes";
 
 const app = express();
 
@@ -55,6 +57,8 @@ const API_PREFIX = `/api/${process.env.API_VERSION || "v1"}`;
 
 app.use(`${API_PREFIX}/premium`, premiumRoutes);
 app.use(`${API_PREFIX}/stars`, starsRoutes);
+app.use(`${API_PREFIX}/gifts`, giftsRoutes);
+app.use(`${API_PREFIX}/reactions`, reactionsRoutes);
 // More routes will be added each day
 
 // ─────────────────────────────────────────
