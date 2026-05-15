@@ -419,3 +419,510 @@ enum SettlementStatus {
   SETTLED     // credited to creator wallet
   FAILED      // settlement failed
 }
+// ─────────────────────────────────────────
+// CREATOR PROFILES
+// Extended profile for monetizing creators
+// ─────────────────────────────────────────
+model CreatorProfile {
+  id                  String              @id @default(uuid())
+  userId              String              @unique
+  displayName         String?
+  bio                 String?             @db.VarChar(500)
+  category            String?             // "entertainment", "education", "gaming", etc
+  isVerified          Boolean             @default(false)
+  isMonetizationEnabled Boolean           @default(false)
+  totalEarned         BigInt              @default(0)
+  totalWithdrawn      BigInt              @default(0)
+  pendingBalance      BigInt              @default(0)  // earned but not settled
+  availableBalance    BigInt              @default(0)  // settled, ready to withdraw
+  subscriberCount     Int                 @default(0)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  payoutMethods       CreatorPayoutMethod[]
+  payouts             CreatorPayout[]
+  taxInfo             CreatorTaxInfo?
+  earningsHistory     CreatorEarning[]
+  analyticsSnapshots  CreatorAnalyticsSnapshot[]
+
+  @@index([userId])
+  @@index([isMonetizationEnabled])
+  @@map("creator_profiles")
+}
+
+// ─────────────────────────────────────────
+// CREATOR PAYOUT METHODS
+// How creator wants to receive money
+// ─────────────────────────────────────────
+model CreatorPayoutMethod {
+  id              String            @id @default(uuid())
+  creatorId       String
+  type            PayoutMethodType
+  isDefault       Boolean           @default(false)
+  isVerified      Boolean           @default(false)
+
+  // TON wallet
+  tonAddress      String?
+
+  // Bank details (encrypted in real app)
+  bankAccountName String?
+  bankAccountNum  String?           // store last 4 digits only
+  bankRoutingNum  String?
+  bankName        String?
+  bankCountry     String?
+
+  // PayPal / other
+  paypalEmail     String?
+  externalId      String?           // ID from payment processor
+
+  minPayoutStars  BigInt            @default(1000)  // minimum withdrawal
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  creator         CreatorProfile    @relation(fields: [creatorId], references: [id])
+  payouts         CreatorPayout[]
+
+  @@index([creatorId])
+  @@map("creator_payout_methods")
+}
+
+enum PayoutMethodType {
+  TON_WALLET
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  USDT_TRC20
+  USDT_ERC20
+}
+
+// ─────────────────────────────────────────
+// CREATOR EARNINGS
+// Detailed record of every earning event
+// ─────────────────────────────────────────
+model CreatorEarning {
+  id              String          @id @default(uuid())
+  creatorId       String
+  sourceType      EarningSourceType
+  sourceId        String          // reactionId, tipId, subscriptionId, etc
+  grossAmount     BigInt
+  platformFeeRate Int             // percentage taken by platform
+  platformFee     BigInt
+  netAmount       BigInt
+  currency        String          @default("STARS")
+  period          String          // "2024-01" for monthly grouping
+  settledAt       DateTime?
+  createdAt       DateTime        @default(now())
+
+  creator         CreatorProfile  @relation(fields: [creatorId], references: [id])
+
+  @@index([creatorId])
+  @@index([creatorId, period])
+  @@index([sourceType])
+  @@index([createdAt])
+  @@map("creator_earnings")
+}
+
+enum EarningSourceType {
+  PAID_REACTION
+  MESSAGE_TIP
+  CHANNEL_SUBSCRIPTION
+  GATED_CONTENT
+  PAID_STORY
+  NFT_SALE
+  NFT_ROYALTY
+  BOT_PAYMENT
+  AD_REVENUE
+  REFERRAL_BONUS
+}
+
+// ─────────────────────────────────────────
+// CREATOR PAYOUTS
+// Actual withdrawal requests & processing
+// ─────────────────────────────────────────
+model CreatorPayout {
+  id              String          @id @default(uuid())
+  creatorId       String
+  payoutMethodId  String
+  starsAmount     BigInt          // stars being withdrawn
+  fiatAmount      Decimal?        @db.Decimal(12, 4)  // converted fiat value
+  fiatCurrency    String?         @default("USD")
+  exchangeRate    Decimal?        @db.Decimal(12, 6)  // stars per USD at time of payout
+  platformFee     BigInt          @default(0)         // withdrawal processing fee
+  netStars        BigInt          // after platform fee
+  status          PayoutStatus    @default(PENDING)
+  failureReason   String?
+  providerTxId    String?         // blockchain tx hash or bank ref
+  requestedAt     DateTime        @default(now())
+  processedAt     DateTime?
+  completedAt     DateTime?
+  metadata        Json?
+
+  creator         CreatorProfile      @relation(fields: [creatorId], references: [id])
+  payoutMethod    CreatorPayoutMethod @relation(fields: [payoutMethodId], references: [id])
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("creator_payouts")
+}
+
+enum PayoutStatus {
+  PENDING         // just requested
+  APPROVED        // admin approved
+  PROCESSING      // being sent
+  COMPLETED       // money sent
+  FAILED          // failed to send
+  CANCELLED       // cancelled by creator or admin
+  ON_HOLD         // flagged for review
+}
+
+// ─────────────────────────────────────────
+// CREATOR TAX INFO
+// Required for compliance in many countries
+// ─────────────────────────────────────────
+model CreatorTaxInfo {
+  id              String    @id @default(uuid())
+  creatorId       String    @unique
+  taxFormType     String?   // "W9", "W8BEN", "W8BEN-E"
+  taxId           String?   // SSN / EIN / VAT (encrypted)
+  fullLegalName   String?
+  address         String?
+  country         String?
+  isSubmitted     Boolean   @default(false)
+  isVerified      Boolean   @default(false)
+  submittedAt     DateTime?
+  verifiedAt      DateTime?
+
+  creator         CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@map("creator_tax_info")
+}
+
+// ─────────────────────────────────────────
+// CREATOR ANALYTICS SNAPSHOTS
+// Daily/weekly/monthly aggregated metrics
+// Computed by cron jobs, not real-time
+// ─────────────────────────────────────────
+model CreatorAnalyticsSnapshot {
+  id              String    @id @default(uuid())
+  creatorId       String
+  period          String    // "2024-01-15" daily, "2024-01" monthly
+  periodType      String    // "daily", "weekly", "monthly"
+
+  // Revenue
+  totalEarned     BigInt    @default(0)
+  reactionEarned  BigInt    @default(0)
+  tipEarned       BigInt    @default(0)
+  subEarned       BigInt    @default(0)
+  storyEarned     BigInt    @default(0)
+  nftEarned       BigInt    @default(0)
+  adEarned        BigInt    @default(0)
+
+  // Engagement
+  newSubscribers  Int       @default(0)
+  lostSubscribers Int       @default(0)
+  totalReactions  Int       @default(0)
+  totalTips       Int       @default(0)
+
+  computedAt      DateTime  @default(now())
+
+  creator         CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@unique([creatorId, period, periodType])
+  @@index([creatorId, periodType])
+  @@map("creator_analytics_snapshots")
+}
+
+// ─────────────────────────────────────────
+// STARS EXCHANGE RATE
+// Track historical exchange rates
+// stars ↔ USD conversion
+// ─────────────────────────────────────────
+model StarsExchangeRate {
+  id              String    @id @default(uuid())
+  starsPerUsd     Decimal   @db.Decimal(12, 6)  // e.g. 50 stars = $1
+  usdPerStar      Decimal   @db.Decimal(12, 8)  // e.g. $0.02 per star
+  source          String    @default("manual")  // "manual", "market", "fixed"
+  isActive        Boolean   @default(true)
+  effectiveFrom   DateTime  @default(now())
+  effectiveTo     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([isActive])
+  @@index([effectiveFrom])
+  @@map("stars_exchange_rates")
+}
+
+// ─────────────────────────────────────────
+// AML / COMPLIANCE FLAGS
+// Anti-money-laundering checks
+// ─────────────────────────────────────────
+model ComplianceFlag {
+  id              String    @id @default(uuid())
+  userId          String
+  flagType        String    // "HIGH_VOLUME", "UNUSUAL_PATTERN", "MULTIPLE_METHODS"
+  severity        String    // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  description     String
+  isResolved      Boolean   @default(false)
+  resolvedBy      String?   // admin userId
+  resolvedAt      DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([isResolved])
+  @@index([severity])
+  @@map("compliance_flags")
+}
+
+// ─────────────────────────────────────────
+// STORIES
+// Core story entity
+// ─────────────────────────────────────────
+model Story {
+  id              String        @id @default(uuid())
+  userId          String
+  type            StoryType     @default(PHOTO)
+  status          StoryStatus   @default(PROCESSING)
+
+  // Media
+  mediaUrl        String?       // final processed URL
+  originalUrl     String?       // raw upload URL
+  thumbnailUrl    String?
+  processedUrls   Json?         // {360p: url, 720p: url, 1080p: url}
+  width           Int?
+  height          Int?
+  durationSec     Int?          // for videos
+  fileSizeMb      Float?
+  mimeType        String?
+
+  // Content
+  caption         String?       @db.VarChar(2048)
+  entities        Json?         // text formatting, mentions, links
+
+  // Privacy
+  privacyType     StoryPrivacy  @default(CONTACTS)
+
+  // Stats (denormalized counters for speed)
+  viewCount       Int           @default(0)
+  uniqueViewCount Int           @default(0)
+  reactionCount   Int           @default(0)
+  replyCount      Int           @default(0)
+  repostCount     Int           @default(0)
+
+  // Lifecycle
+  isPinned        Boolean       @default(false)
+  isArchived      Boolean       @default(false)
+  isDeleted       Boolean       @default(false)
+  isPremiumOnly   Boolean       @default(false)
+  expiresAt       DateTime
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  privacyRules    StoryPrivacyRule[]
+  views           StoryView[]
+  reactions       StoryReaction[]
+  replies         StoryReply[]
+  mediaVariants   StoryMediaVariant[]
+  processingJob   StoryProcessingJob?
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([isDeleted, isArchived])
+  @@index([createdAt])
+  @@map("stories")
+}
+
+enum StoryType {
+  PHOTO
+  VIDEO
+  TEXT          // text-only story with background
+  BOOMERANG     // looping video
+}
+
+enum StoryStatus {
+  PROCESSING    // media being transcoded
+  ACTIVE        // live and visible
+  EXPIRED       // past expiry time
+  ARCHIVED      // moved to archive
+  DELETED       // soft deleted
+  FAILED        // processing failed
+}
+
+enum StoryPrivacy {
+  EVERYONE
+  CONTACTS
+  CLOSE_FRIENDS
+  SELECTED_USERS
+  NOBODY         // draft/scheduled
+}
+
+// ─────────────────────────────────────────
+// STORY PRIVACY RULES
+// Per-story access control
+// ─────────────────────────────────────────
+model StoryPrivacyRule {
+  id        String  @id @default(uuid())
+  storyId   String
+  ruleType  String  // "allow_user", "deny_user", "allow_list", "deny_list"
+  userId    String? // specific user
+  listId    String? // contact list id
+
+  story     Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@map("story_privacy_rules")
+}
+
+// ─────────────────────────────────────────
+// STORY MEDIA VARIANTS
+// Different quality versions of same media
+// ─────────────────────────────────────────
+model StoryMediaVariant {
+  id          String  @id @default(uuid())
+  storyId     String
+  quality     String  // "original", "360p", "480p", "720p", "1080p", "thumbnail"
+  url         String
+  width       Int?
+  height      Int?
+  fileSizeMb  Float?
+  bitrate     Int?    // for videos, in kbps
+  codec       String? // "h264", "vp9", "av1"
+  createdAt   DateTime @default(now())
+
+  story       Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, quality])
+  @@index([storyId])
+  @@map("story_media_variants")
+}
+
+// ─────────────────────────────────────────
+// STORY PROCESSING JOBS
+// Tracks async media processing
+// ─────────────────────────────────────────
+model StoryProcessingJob {
+  id              String          @id @default(uuid())
+  storyId         String          @unique
+  status          ProcessingStatus @default(QUEUED)
+  priority        Int             @default(5)  // 1=highest, 10=lowest
+  attempts        Int             @default(0)
+  maxAttempts     Int             @default(3)
+  progress        Int             @default(0)  // 0-100 percent
+  currentStep     String?         // "uploading", "transcoding", "thumbnail", "cdn"
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  story           Story           @relation(fields: [storyId], references: [id])
+
+  @@index([status])
+  @@index([priority, status])
+  @@map("story_processing_jobs")
+}
+
+enum ProcessingStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────
+// STORY VIEWS
+// Who viewed which story and when
+// ─────────────────────────────────────────
+model StoryView {
+  id            String    @id @default(uuid())
+  storyId       String
+  viewerId      String
+  viewedAt      DateTime  @default(now())
+  viewDurationMs Int?     // how long they watched
+  source        String?   // "feed", "profile", "search", "link"
+  isStealthView Boolean   @default(false) // stealth mode view
+
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, viewerId])  // one view record per user per story
+  @@index([storyId])
+  @@index([viewerId])
+  @@index([storyId, viewedAt])
+  @@map("story_views")
+}
+
+// ─────────────────────────────────────────
+// STORY REACTIONS
+// Emoji reactions on stories
+// ─────────────────────────────────────────
+model StoryReaction {
+  id        String    @id @default(uuid())
+  storyId   String
+  userId    String
+  emoji     String
+  createdAt DateTime  @default(now())
+
+  story     Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])  // one reaction per user per story
+  @@index([storyId])
+  @@map("story_reactions")
+}
+
+// ─────────────────────────────────────────
+// STORY REPLIES
+// Text/media replies to stories
+// ─────────────────────────────────────────
+model StoryReply {
+  id          String    @id @default(uuid())
+  storyId     String
+  userId      String
+  messageText String?   @db.VarChar(2048)
+  mediaUrl    String?
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  story       Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@index([userId])
+  @@map("story_replies")
+}
+
+// ─────────────────────────────────────────
+// CLOSE FRIENDS LIST
+// Users marked as close friends
+// ─────────────────────────────────────────
+model CloseFriend {
+  id          String    @id @default(uuid())
+  userId      String    // owner of the list
+  friendId    String    // friend user id
+  addedAt     DateTime  @default(now())
+
+  @@unique([userId, friendId])
+  @@index([userId])
+  @@map("close_friends")
+}
+
+// ─────────────────────────────────────────
+// STORY FEED CACHE
+// Pre-computed feed for fast delivery
+// ─────────────────────────────────────────
+model StoryFeedCache {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  feedData    Json      // ordered list of story rings
+  computedAt  DateTime  @default(now())
+  expiresAt   DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("story_feed_cache")
+}

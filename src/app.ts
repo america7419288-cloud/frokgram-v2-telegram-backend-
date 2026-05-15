@@ -7,6 +7,8 @@ import premiumRoutes from "./routes/premium.routes";
 import starsRoutes from "./routes/stars.routes";
 import giftsRoutes from "./routes/gifts.routes";
 import reactionsRoutes from "./routes/reactions.routes";
+import creatorRoutes from "./routes/creator.routes";
+import storiesRoutes from "./routes/stories.routes";
 
 const app = express();
 
@@ -59,6 +61,8 @@ app.use(`${API_PREFIX}/premium`, premiumRoutes);
 app.use(`${API_PREFIX}/stars`, starsRoutes);
 app.use(`${API_PREFIX}/gifts`, giftsRoutes);
 app.use(`${API_PREFIX}/reactions`, reactionsRoutes);
+app.use(`${API_PREFIX}/creator`, creatorRoutes);
+app.use(`${API_PREFIX}/stories`, storiesRoutes);
 // More routes will be added each day
 
 // ─────────────────────────────────────────

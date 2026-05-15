@@ -6,7 +6,11 @@ import { prisma } from "./lib/prisma";
 import "./jobs/premiumJobs";
 import "./jobs/starsJobs";
 import "./jobs/day3Jobs";
+import "./jobs/day4Jobs";
+import "./jobs/storyJobs";
 import "./listeners/starsListeners";
+import { storageService } from "./lib/storage";
+
 const PORT = parseInt(process.env.PORT || "3000");
 
 async function startServer() {
@@ -18,6 +22,10 @@ async function startServer() {
     // ── Test Redis connection
     await redis.ping();
     logger.info("✅ Redis connected");
+
+    // ── Initialize Storage
+    await storageService.initialize();
+    logger.info("✅ Storage initialized");
 
     // ── Start HTTP server
     app.listen(PORT, () => {

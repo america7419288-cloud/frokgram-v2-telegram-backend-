@@ -232,10 +232,27 @@ async function seedGiftAnimations() {
   console.log("✅ Gift animations seeded");
 }
 
+async function seedExchangeRate() {
+  console.log("💱 Seeding exchange rate...");
+
+  await prisma.starsExchangeRate.create({
+    data: {
+      starsPerUsd: 50,      // 50 stars = $1 USD
+      usdPerStar: 0.02,     // 1 star = $0.02 USD
+      source: "fixed",
+      isActive: true,
+      effectiveFrom: new Date(),
+    },
+  });
+
+  console.log("✅ Exchange rate seeded: 50 stars = $1 USD");
+}
+
 async function main() {
   console.log("Seeding database...");
   await seedStarsPriceTiers();
   await seedGiftAnimations();
+  await seedExchangeRate();
 }
 
 main()
